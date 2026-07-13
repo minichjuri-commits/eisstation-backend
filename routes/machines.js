@@ -122,4 +122,50 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
+// Maschine entfernen. Nicht erlaubt, solange noch Artikel in Bearbeitung
+// sind (die koennen nicht "verschoben" werden, waehrend gerade daran
+// gearbeitet wird). Noch nicht begonnene ("offen") Artikel werden vorher
+// automatisch auf die verbleibenden aktiven Maschinen verteilt.
+router.delete('/:id', async (req, res) => {
+  try {
+    const machineId = parseInt(req.params.id, 10);
+    const data = await db.read();
+    const machine = data.machines.find((m) => m.id === machineId);
+    if (!machine) return res.status(404).json({ error: 'Maschine nicht gefunden' });
+
+    const hasInProgress = data.orders.some((o) => o.items.some((i) => i.machine === machineId && i.status === 'in_bearbeitung'));
+    if (hasInProgress) {
+      return res.status(400).json({ error: 'Diese Maschine hat noch Artikel in Bearbeitung - bitte zuerst fertigstellen oder stornieren.' });
+    }
+
+    const remainingActiveIds = data.machines.filter((m) => m.active && m.id !== machineId).map((m) => m.id);
+    const hasOpenItems = data.orders.some((o) => o.items.some((i) => i.machine === machineId && i.status === 'offen'));
+    if (hasOpenItems && remainingActiveIds.length === 0) {
+      return res.status(400).json({ error: 'Diese Maschine hat noch offene Artikel und es gibt keine andere aktive Maschine, auf die verteilt werden koennte.' });
+    }
+
+    if (hasOpenItems) {
+      const counts = {};
+      remainingActiveIds.forEach((id) => {
+        counts[id] = openItemsCountFor(data.orders, id);
+      });
+      data.orders.forEach((o) => {
+        o.items.forEach((i) => {
+          if (i.machine === machineId && i.status === 'offen') {
+            const target = pickLeastLoaded(counts, remainingActiveIds);
+            counts[target] += 1;
+            i.machine = target;
+          }
+        });
+      });
+    }
+
+    data.machines = data.machines.filter((m) => m.id !== machineId);
+    await db.write(data);
+    res.json({ deleted: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

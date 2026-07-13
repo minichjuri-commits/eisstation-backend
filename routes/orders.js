@@ -30,7 +30,7 @@ router.get('/:id', async (req, res) => {
 // mit der geringsten Auslastung zugewiesen (auch innerhalb derselben Bestellung).
 router.post('/', async (req, res) => {
   try {
-    const { items } = req.body;
+    const { items, discount } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Keine Artikel uebermittelt' });
     }
@@ -69,7 +69,16 @@ router.post('/', async (req, res) => {
     }
     if (orderItems.length === 0) return res.status(400).json({ error: 'Keine gueltigen Artikel' });
 
-    const order = { id: formatTicket(ticketNo), ticketNo, items: orderItems, createdAt, phone: null, messages: [], completedAt: null };
+    const order = {
+      id: formatTicket(ticketNo),
+      ticketNo,
+      items: orderItems,
+      createdAt,
+      phone: null,
+      messages: [],
+      completedAt: null,
+      discount: Math.max(0, Number(discount) || 0),
+    };
     data.orders.push(order);
     data.ticketCounter += 1;
     await db.write(data);
@@ -86,6 +95,22 @@ router.post('/', async (req, res) => {
 });
 
 // Telefonnummer durch das Kassenpersonal setzen/aendern
+// Rabatt auf eine bestehende Bestellung setzen/aendern (auch nachtraeglich
+// moeglich, z.B. aus der Detailansicht in der Kasse).
+router.post('/:id/discount', async (req, res) => {
+  try {
+    const { discount } = req.body;
+    const data = await db.read();
+    const order = data.orders.find((o) => o.id === req.params.id.toUpperCase());
+    if (!order) return res.status(404).json({ error: 'Bestellung nicht gefunden' });
+    order.discount = Math.max(0, Number(discount) || 0);
+    await db.write(data);
+    res.json(order);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/:id/phone', async (req, res) => {
   try {
     const { phone } = req.body;
