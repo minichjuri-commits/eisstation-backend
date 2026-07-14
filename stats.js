@@ -32,8 +32,9 @@ router.get('/', async (req, res) => {
     }
 
     const byFlavor = {};
-    let totalRevenue = 0;
+    let grossRevenue = 0;
     let totalUnits = 0;
+    let totalDiscount = 0;
 
     data.orders.forEach((o) => {
       o.items.forEach((i) => {
@@ -46,10 +47,21 @@ router.get('/', async (req, res) => {
           byFlavor[key].units += i.qty;
           byFlavor[key].revenue += i.qty * i.unitPrice;
           totalUnits += i.qty;
-          totalRevenue += i.qty * i.unitPrice;
+          grossRevenue += i.qty * i.unitPrice;
         }
       });
+      // Rabatt wird der Periode zugeordnet, in der die Bestellung komplett
+      // fertiggestellt wurde (analog zur Sorten-Auswertung, die ebenfalls
+      // auf den Fertigstellungszeitpunkt abstellt).
+      if (o.completedAt && inRange(o.completedAt, start, end) && o.discount > 0) {
+        totalDiscount += Number(o.discount) || 0;
+      }
     });
+
+    const byFlavorList = Object.values(byFlavor).sort((a, b) => b.revenue - a.revenue);
+    if (totalDiscount > 0) {
+      byFlavorList.push({ flavorId: '__discount__', name: 'Rabatte', color: '#6D7278', units: 0, revenue: -totalDiscount });
+    }
 
     const years = [
       ...new Set(
@@ -64,9 +76,10 @@ router.get('/', async (req, res) => {
       label,
       start,
       end,
-      totalRevenue,
+      totalRevenue: Math.max(0, grossRevenue - totalDiscount),
+      totalDiscount,
       totalUnits,
-      byFlavor: Object.values(byFlavor).sort((a, b) => b.revenue - a.revenue),
+      byFlavor: byFlavorList,
       availableYears: years,
     });
   } catch (e) {

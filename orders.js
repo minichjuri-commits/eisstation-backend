@@ -118,7 +118,7 @@ router.post('/:id/phone', async (req, res) => {
     const data = await db.read();
     const order = data.orders.find((o) => o.id === req.params.id.toUpperCase());
     if (!order) return res.status(404).json({ error: 'Bestellung nicht gefunden' });
-    await linkPhoneAndNotify(order, phone, sendSms);
+    await linkPhoneAndNotify(order, phone, sendSms, process.env.FRONTEND_URL || 'http://localhost:5500');
     await db.write(data);
     res.json(order);
   } catch (e) {
@@ -150,7 +150,7 @@ router.patch('/:id/items/:itemId/advance', async (req, res) => {
 
     if (justFinished && order.phone && !alreadyHasCompletion) {
       const allFinished = relevant.every((i) => i.status === 'fertig');
-      const completionText = buildCompletionText(order, allFinished);
+      const completionText = buildCompletionText(order, allFinished, process.env.FRONTEND_URL || 'http://localhost:5500');
       const r = await sendSms(order.phone, completionText);
       order.messages.push({ type: 'completion', text: completionText, time: Date.now(), simulated: r.simulated });
     }

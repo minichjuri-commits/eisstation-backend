@@ -44,19 +44,21 @@ function deriveOrderStatus(order) {
   return 'offen';
 }
 
-function buildCompletionText(order, allFinished) {
+function buildCompletionText(order, allFinished, frontendUrl) {
+  const link = `${frontendUrl}/order/${order.id}`;
   return allFinished
-    ? `Ihre Bestellung ${order.id} ist komplett fertig - bitte innerhalb von 2 Minuten am Ausgabeschalter abholen, sonst geht sie an den naechsten Kunden!`
-    : `Ein Teil Ihrer Bestellung ${order.id} ist fertig - bitte am Ausgabeschalter abholen oder auf den Rest warten.`;
+    ? `Ihre Bestellung ${order.id} ist komplett fertig - bitte innerhalb von 2 Minuten am Ausgabeschalter abholen, sonst geht sie an den naechsten Kunden! Status: ${link}`
+    : `Ein Teil Ihrer Bestellung ${order.id} ist fertig - bitte am Ausgabeschalter abholen oder auf den Rest warten. Status: ${link}`;
 }
 
 // Verknuepft eine Telefonnummer mit einer Bestellung, verschickt die
 // Bestellbestaetigung und - falls bereits ein Artikel fertig war, bevor die
 // Nummer hinterlegt wurde - die (einmalige) Fertigstellungs-Nachricht direkt hinterher.
-async function linkPhoneAndNotify(order, phone, sendSms) {
+async function linkPhoneAndNotify(order, phone, sendSms, frontendUrl) {
   order.phone = phone.trim();
   const total = orderTotal(order);
-  const confirmationText = `Bestellbestaetigung - Nr. ${order.id} ueber ${total.toFixed(2)} EUR eingegangen. Wir melden uns, sobald der erste Artikel fertig ist.`;
+  const link = `${frontendUrl}/order/${order.id}`;
+  const confirmationText = `Bestellbestaetigung - Nr. ${order.id} ueber ${total.toFixed(2)} EUR eingegangen. Verfolgen: ${link}`;
   const confirmationResult = await sendSms(order.phone, confirmationText);
   order.messages.push({ type: 'confirmation', text: confirmationText, time: Date.now(), simulated: confirmationResult.simulated });
 
@@ -65,7 +67,7 @@ async function linkPhoneAndNotify(order, phone, sendSms) {
   const alreadyHasCompletion = order.messages.some((m) => m.type === 'completion');
   if (anyFinished && !alreadyHasCompletion) {
     const allFinished = relevant.length > 0 && relevant.every((i) => i.status === 'fertig');
-    const completionText = buildCompletionText(order, allFinished);
+    const completionText = buildCompletionText(order, allFinished, frontendUrl);
     const completionResult = await sendSms(order.phone, completionText);
     order.messages.push({ type: 'completion', text: completionText, time: Date.now(), simulated: completionResult.simulated });
   }
