@@ -6,10 +6,19 @@ const {
   formatTicket, pickLeastLoaded, openItemsCountFor, buildCompletionText, linkPhoneAndNotify,
 } = require('../lib/logic');
 
+// Optional per ?since= und/oder ?until= (Millisekunden seit Epoch)
+// einschraenkbar. Die Grenzen werden bewusst vom Client berechnet (nicht
+// hier serverseitig aus Jahr/Monat/Tag), damit die tatsaechliche
+// Zeitzone des Standorts zaehlt und nicht die des Render-Servers.
 router.get('/', async (req, res) => {
   try {
     const data = await db.read();
-    res.json(data.orders.slice().reverse());
+    let orders = data.orders;
+    const since = req.query.since ? parseInt(req.query.since, 10) : null;
+    const until = req.query.until ? parseInt(req.query.until, 10) : null;
+    if (since != null && !isNaN(since)) orders = orders.filter((o) => o.createdAt >= since);
+    if (until != null && !isNaN(until)) orders = orders.filter((o) => o.createdAt < until);
+    res.json(orders.slice().reverse());
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -118,7 +127,7 @@ router.post('/:id/phone', async (req, res) => {
     const data = await db.read();
     const order = data.orders.find((o) => o.id === req.params.id.toUpperCase());
     if (!order) return res.status(404).json({ error: 'Bestellung nicht gefunden' });
-    await linkPhoneAndNotify(order, phone, sendSms);
+    await linkPhoneAndNotify(order, phone, sendSms, process.env.FRONTEND_URL || 'http://localhost:5500');
     await db.write(data);
     res.json(order);
   } catch (e) {
@@ -150,7 +159,7 @@ router.patch('/:id/items/:itemId/advance', async (req, res) => {
 
     if (justFinished && order.phone && !alreadyHasCompletion) {
       const allFinished = relevant.every((i) => i.status === 'fertig');
-      const completionText = buildCompletionText(order, allFinished);
+      const completionText = buildCompletionText(order, allFinished, process.env.FRONTEND_URL || 'http://localhost:5500');
       const r = await sendSms(order.phone, completionText);
       order.messages.push({ type: 'completion', text: completionText, time: Date.now(), simulated: r.simulated });
     }

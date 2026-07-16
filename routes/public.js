@@ -52,7 +52,7 @@ router.post('/orders/:id/link-phone', async (req, res) => {
     const data = await db.read();
     const order = data.orders.find((o) => o.id === req.params.id.toUpperCase());
     if (!order) return res.status(404).json({ error: 'Bestellung nicht gefunden' });
-    await linkPhoneAndNotify(order, phone, sendSms);
+    await linkPhoneAndNotify(order, phone, sendSms, process.env.FRONTEND_URL || 'http://localhost:5500');
     await db.write(data);
     res.json(order);
   } catch (e) {
