@@ -66,7 +66,9 @@ router.get('/orders/:id/queue', async (req, res) => {
     const order = data.orders.find((o) => o.id === req.params.id.toUpperCase());
     if (!order) return res.status(404).json({ error: 'Bestellung nicht gefunden' });
 
-    const avgMs = averageProcessingTimeMs(data.orders);
+    const dayStart = req.query.dayStart ? parseInt(req.query.dayStart, 10) : null;
+    const dayEnd = req.query.dayEnd ? parseInt(req.query.dayEnd, 10) : null;
+    const avgMs = averageProcessingTimeMs(data.orders, dayStart, dayEnd);
     const involvedMachines = [
       ...new Set(order.items.filter((i) => i.status === 'offen' || i.status === 'in_bearbeitung').map((i) => i.machine)),
     ];
