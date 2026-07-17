@@ -1,9 +1,10 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const db = require('../lib/db');
 const { sendSms } = require('../lib/sms');
 const {
-  formatTicket, pickLeastLoaded, openItemsCountFor, buildCompletionText, linkPhoneAndNotify,
+  formatTicket, pickLeastLoaded, openItemsCountFor, buildCompletionText, linkPhoneAndNotify, orderTrackingUrl,
 } = require('../lib/logic');
 
 // Optional per ?since= und/oder ?until= (Millisekunden seit Epoch)
@@ -87,6 +88,11 @@ router.post('/', async (req, res) => {
       messages: [],
       completedAt: null,
       discount: Math.max(0, Number(discount) || 0),
+      // Zufaelliger Token, der zusaetzlich zur Bestellnummer noetig ist, um
+      // die Kunden-Verfolgungsseite zu oeffnen - verhindert, dass jemand
+      // einfach Bestellnummern durchprobiert und fremde Bestellungen samt
+      // hinterlegter Telefonnummer einsehen kann.
+      token: crypto.randomBytes(8).toString('hex'),
     };
     data.orders.push(order);
     data.ticketCounter += 1;
@@ -95,7 +101,7 @@ router.post('/', async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5500';
     res.json({
       order,
-      qrTargetUrl: `${frontendUrl}/order/${order.id}`,
+      qrTargetUrl: orderTrackingUrl(order, frontendUrl),
       qrImageUrl: `/api/public/orders/${order.id}/qrcode.png`,
     });
   } catch (e) {
@@ -161,11 +167,52 @@ router.patch('/:id/items/:itemId/advance', async (req, res) => {
       const allFinished = relevant.every((i) => i.status === 'fertig');
       const completionText = buildCompletionText(order, allFinished, process.env.FRONTEND_URL || 'http://localhost:5500');
       const r = await sendSms(order.phone, completionText);
-      order.messages.push({ type: 'completion', text: completionText, time: Date.now(), simulated: r.simulated });
+      order.messages.push({
+        type: 'completion',
+        text: completionText,
+        time: Date.now(),
+        simulated: r.simulated,
+        failed: !!r.failed,
+        error: r.error || null,
+      });
     }
     if (justFinished) {
       const allFinishedNow = relevant.length > 0 && relevant.every((i) => i.status === 'fertig');
       if (allFinishedNow && !order.completedAt) order.completedAt = Date.now();
+    }
+
+    await db.write(data);
+    res.json(order);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Setzt einen Artikel einen Schritt zurueck (fertig -> in Bearbeitung,
+// in Bearbeitung -> offen) - fuer Vertipper an der Maschinen-Ansicht.
+// Wird ein bereits fertiger Artikel zurueckgesetzt und war die Bestellung
+// dadurch als "komplett fertig" markiert, wird das wieder aufgehoben (der
+// Abholhinweis beim Kunden verschwindet dann, bis wirklich alles fertig
+// ist). Bereits verschickte SMS koennen naturgemaess nicht zurueckgeholt
+// werden.
+router.patch('/:id/items/:itemId/revert', async (req, res) => {
+  try {
+    const data = await db.read();
+    const order = data.orders.find((o) => o.id === req.params.id.toUpperCase());
+    if (!order) return res.status(404).json({ error: 'Bestellung nicht gefunden' });
+    const item = order.items.find((i) => i.itemId === req.params.itemId);
+    if (!item) return res.status(404).json({ error: 'Artikel nicht gefunden' });
+    if (item.status === 'offen') return res.status(400).json({ error: 'Artikel ist bereits offen' });
+    if (item.status === 'storniert') return res.status(400).json({ error: 'Stornierte Artikel koennen nicht zurueckgesetzt werden' });
+
+    if (item.status === 'fertig') {
+      item.status = 'in_bearbeitung';
+      item.itemFinishedAt = null;
+      const relevant = order.items.filter((i) => i.status !== 'storniert');
+      const stillAllFinished = relevant.length > 0 && relevant.every((i) => i.status === 'fertig');
+      if (!stillAllFinished) order.completedAt = null;
+    } else if (item.status === 'in_bearbeitung') {
+      item.status = 'offen';
     }
 
     await db.write(data);

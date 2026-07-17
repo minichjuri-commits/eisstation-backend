@@ -11,6 +11,10 @@ const publicRouter = require('./routes/public');
 const statsRouter = require('./routes/stats');
 
 const app = express();
+// Noetig, damit req.ip hinter Renders Reverse-Proxy die echte Client-IP
+// liefert (fuer die Rate-Begrenzung in routes/public.js) statt der
+// Proxy-Adresse.
+app.set('trust proxy', 1);
 
 // Frontend (Vercel) und Backend (Render) laufen auf unterschiedlichen
 // Adressen -> CORS muss Anfragen von der Frontend-Adresse erlauben.
