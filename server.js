@@ -42,7 +42,7 @@ const PORT = process.env.PORT || 3000;
     await db.init();
     app.listen(PORT, () => {
       console.log(`Eisstation-Backend laeuft auf Port ${PORT}`);
-      if (!process.env.TWILIO_ACCOUNT_SID) console.log('Hinweis: keine Twilio-Zugangsdaten gesetzt - SMS werden nur simuliert.');
+      if (!process.env.SEVEN_API_KEY) console.log('Hinweis: kein SEVEN_API_KEY gesetzt - SMS werden nur simuliert.');
       if (!process.env.STAFF_USER) console.log('Hinweis: kein STAFF_USER/STAFF_PASSWORD gesetzt - Personal-API ist ungeschuetzt.');
       if (!process.env.FRONTEND_URL) console.log('Hinweis: FRONTEND_URL ist nicht gesetzt - CORS erlaubt aktuell jede Adresse (*).');
     });
